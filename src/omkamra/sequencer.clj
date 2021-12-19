@@ -93,10 +93,10 @@
    (fn [timeline {:keys [snap events] :as pattern}]
      (let [snapped-start-pos (align-position start-pos snap)]
        (reduce
-        (fn [timeline [position callback :as event]]
+        (fn [timeline [offset callback :as event]]
           ;; avoid scheduling callbacks to start-pos as that's
           ;; already in the past
-          (let [absolute-pos (+ snapped-start-pos (int position))
+          (let [absolute-pos (+ snapped-start-pos (int offset))
                 adjusted-pos (max absolute-pos (inc start-pos))]
             (update timeline adjusted-pos conjv callback)))
         timeline events)))
@@ -149,20 +149,20 @@
 ;; patterns
 
 (def init-pattern
-  {:position 0
+  {:events []
    :snap 0
-   :events []})
+   :offset 0})
 
 (defn add-callback
-  [{:keys [position] :as pattern} callback]
+  [{:keys [offset] :as pattern} callback]
   (if callback
-    (update pattern :events conj [position callback])
+    (update pattern :events conj [offset callback])
     pattern))
 
 (defn add-callback-after
-  [{:keys [position] :as pattern} delay callback]
+  [{:keys [offset] :as pattern} delay callback]
   (if (and delay callback)
-    (update pattern :events conj [(+ position delay) callback])
+    (update pattern :events conj [(+ offset delay) callback])
     pattern))
 
 (defmacro pfn
@@ -234,9 +234,9 @@
             tpb (:tpb sequencer)
             ticks (beats->ticks (* steps step) tpb)]
         (if (pos? ticks)
-          (update pattern :position + ticks)
+          (update pattern :offset + ticks)
           (let [alignment (- ticks)]
-            (update pattern :position align-position alignment)))))))
+            (update pattern :offset align-position alignment)))))))
 
 (defmethod compile-pattern :var
   [[_ v]]
@@ -283,10 +283,10 @@
       (compile-pattern `[:bind ~bindings [:mix ~@body]])
       (let [pfs (mapv compile-form body)]
         (pfn [pattern bindings]
-          (let [{:keys [position]} pattern]
+          (let [{:keys [offset]} pattern]
             (reduce (fn [pattern pf]
                       (-> (pf pattern bindings)
-                          (assoc :position position)))
+                          (assoc :offset offset)))
                     pattern pfs)))))))
 
 (defmethod compile-pattern :mix1
@@ -307,7 +307,7 @@
 (defmethod compile-pattern :play
   [[_ & body]]
   (let [pf (compile-pattern (cons :seq body))]
-    (pfn [{:keys [position] :as pattern}
+    (pfn [{:keys [offset] :as pattern}
           {:keys [sequencer] :as bindings}]
       ;; @position-2: callback executed, future
       ;;   invokes (play sequencer ...) in a separate thread which
@@ -318,10 +318,10 @@
       ;;
       ;; merge-pattern-queue ensures that the actually scheduled
       ;; position of any event is not in the past (this may result in
-      ;; a one tick delay for events with a relative position of zero)
-      (let [sched-pos (- position 2)
+      ;; a one tick delay for events with an offset of zero)
+      (let [sched-offset (- offset 2)
             callback #(future (play sequencer pf bindings))]
-        (update pattern :events conj [sched-pos callback])))))
+        (update pattern :events conj [sched-offset callback])))))
 
 (declare bpm!)
 
