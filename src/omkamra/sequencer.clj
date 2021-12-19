@@ -12,6 +12,8 @@
 (def parknanos-current-precision (atom parknanos-default-precision))
 
 (defn nanosleep
+  "Sleeps for ns nanoseconds. Attempts to be precise, even if this
+  requires busy waiting."
   [^long ns]
   (let [end (+ (System/nanoTime) ns)]
     (loop [time-left ns]
@@ -112,7 +114,7 @@
 
 (defn find-target-factory
   [descriptor]
-  (let [ok? (fn [factory] (TargetFactory/understands-target-descriptor? factory descriptor))
+  (let [ok? (fn [factory] (TargetFactory/understands-descriptor? factory descriptor))
         ok-factories (filter ok? @target-factories)]
     (when (empty? ok-factories)
       (throw (ex-info "unable to find target factory which understands descriptor"
@@ -122,8 +124,23 @@
                       {:descriptor descriptor})))
     (first ok-factories)))
 
+(def make-target*
+  (memoize
+   (fn [factory sanitized-descriptor]
+     (TargetFactory/make-target factory sanitized-descriptor))))
+
+(defn make-target
+  "Finds the target factory which understands descriptor and uses it
+  to create the corresponding target. Caches the result, so successive
+  calls with the same descriptor return the same target. Uses the
+  descriptor's sanitized (canonical) form as the cache key."
+  [descriptor]
+  (let [factory (find-target-factory descriptor)
+        descriptor (TargetFactory/sanitize-descriptor factory descriptor)]
+    (make-target* factory descriptor)))
+
 (defonce
-  ^{:doc "Set of targets shared by all sequencers. These are automatically started when a sequencer starts playing and stopped when the last sequencer stops playing."}
+  ^{:doc "Set of targets shared by all sequencers. These are automatically started when the first sequencer starts and stopped when the last active sequencer exits."}
   registered-targets (atom #{}))
 
 (defn register-target
@@ -134,21 +151,14 @@
   [target]
   (swap! registered-targets disj target))
 
-(defmacro define-target
-  [name descriptor]
-  `(def ~name (make-target ~descriptor)))
-
-(defmacro define-and-register-target
-  [name descriptor]
-  `(do
-     (def ~name (make-target ~descriptor))
-     (register-target ~name)))
-
-(def ^:dynamic *compile-target* nil)
+(def
+  ^:dynamic
+  ^{:doc "The pattern compiler turns to this target if it finds a pattern form, pattern expression, binding key or bind expression that it does not understand. This target can also supply default bindings for :bind forms."}
+  *compile-target* nil)
 
 ;; patterns
 
-(def init-pattern
+(def seed-pattern
   {:events []
    :snap 0
    :offset 0})
@@ -166,7 +176,7 @@
     pattern))
 
 (defmacro pfn
-  "Same as fn but marks the resulting function as a pattern function."
+  "Same as fn but marks the resulting function as a pattern transformer."
   {:style/indent 1}
   [& args]
   `(vary-meta (fn ~@args) assoc :pfn? true))
@@ -175,74 +185,73 @@
   [x]
   (and (fn? x) (:pfn? (meta x))))
 
-(defn pattern?
+(defn pattern-expr?
   [x]
   (and (vector? x)
        (keyword? (first x))))
 
-(defmulti compile-pattern first)
+(defmulti compile-pattern-expr first)
 
-(defn compile-form
+(defn compile-pattern-form
   [x]
   (if (pfn? x)
     x
     (recur (cond
-             (pattern? x) (compile-pattern x)
-             (var? x) (compile-pattern [:var x])
-             (fn? x) (compile-pattern [:call x])
-             (sequential? x) (compile-pattern (cons :seq x))
-             (set? x) (compile-pattern (cons :mix x))
-             (nil? x) (compile-pattern [:nop])
-             :else (if *compile-target*
-                     (Target/compile-form *compile-target* x)
-                     (throw (ex-info "unable to compile form" {:form x})))))))
+             (pattern-expr? x) (compile-pattern-expr x)
+             (var? x) (compile-pattern-expr [:var x])
+             (fn? x) (compile-pattern-expr [:call x])
+             (sequential? x) (compile-pattern-expr (cons :seq x))
+             (set? x) (compile-pattern-expr (cons :mix x))
+             (nil? x) (compile-pattern-expr [:nop])
+             :else (or (and *compile-target*
+                            (Target/compile-pattern-form *compile-target* x))
+                       (throw (ex-info "unable to compile pattern form" {:form x})))))))
 
-(defmethod compile-pattern :default
-  [pattern]
-  (if *compile-target*
-    (Target/compile-pattern *compile-target* pattern)
-    (throw (ex-info "unable to compile pattern" {:pattern pattern}))))
+(defmethod compile-pattern-expr :default
+  [expr]
+  (or (and *compile-target*
+           (Target/compile-pattern-expr *compile-target* expr))
+      (throw (ex-info "unable to compile pattern expression" {:expr expr}))))
 
-(defmethod compile-pattern :nop
+(defmethod compile-pattern-expr :nop
   [[_]]
   (pfn [pattern bindings]
     pattern))
 
-(defmethod compile-pattern :clear
+(defmethod compile-pattern-expr :clear
   [[_]]
   (pfn [pattern bindings]
-    init-pattern))
+    seed-pattern))
 
-(defmethod compile-pattern :call
+(defmethod compile-pattern-expr :call
   [[_ callback]]
   (pfn [pattern bindings]
     (add-callback pattern callback)))
 
-(defmethod compile-pattern :snap
+(defmethod compile-pattern-expr :snap
   [[_ beats]]
   (pfn [pattern bindings]
     (let [{:keys [sequencer]} bindings
-          tpb (:tpb sequencer)]
+          {:keys [tpb]} sequencer]
       (assoc pattern :snap (beats->ticks beats tpb)))))
 
-(defmethod compile-pattern :wait
+(defmethod compile-pattern-expr :wait
   [[_ steps]]
   (if (zero? steps)
-    (compile-pattern [:nop])
+    (compile-pattern-expr [:nop])
     (pfn [pattern bindings]
       (let [{:keys [step sequencer]} bindings
-            tpb (:tpb sequencer)
+            {:keys [tpb]} sequencer
             ticks (beats->ticks (* steps step) tpb)]
         (if (pos? ticks)
           (update pattern :offset + ticks)
           (let [alignment (- ticks)]
             (update pattern :offset align-position alignment)))))))
 
-(defmethod compile-pattern :var
+(defmethod compile-pattern-expr :var
   [[_ v]]
   (pfn [pattern bindings]
-    (let [pf (var-get v)]
-      (assert (pfn? pf))
+    (let [pf (compile-pattern-form (var-get v))]
       (pf pattern bindings))))
 
 (defn collect-bindings
@@ -261,27 +270,27 @@
                  (conj body head))))
       [bindings body])))
 
-(defmethod compile-pattern :seq
+(defmethod compile-pattern-expr :seq
   [[_ & body]]
   (if (nil? body)
-    (compile-pattern [:nop])
+    (compile-pattern-expr [:nop])
     (let [[bindings body] (collect-bindings body)]
       (if (seq bindings)
-        (compile-pattern `[:bind ~bindings [:seq ~@body]])
+        (compile-pattern-expr `[:bind ~bindings [:seq ~@body]])
         (if (nil? (next body))
-          (compile-form (first body))
-          (let [pfs (mapv compile-form body)]
+          (compile-pattern-form (first body))
+          (let [pfs (mapv compile-pattern-form body)]
             (pfn [pattern bindings]
               (reduce (fn [pattern pf]
                         (pf pattern bindings))
                       pattern pfs))))))))
 
-(defmethod compile-pattern :mix
+(defmethod compile-pattern-expr :mix
   [[_ & body]]
   (let [[bindings body] (collect-bindings body)]
     (if (seq bindings)
-      (compile-pattern `[:bind ~bindings [:mix ~@body]])
-      (let [pfs (mapv compile-form body)]
+      (compile-pattern-expr `[:bind ~bindings [:mix ~@body]])
+      (let [pfs (mapv compile-pattern-form body)]
         (pfn [pattern bindings]
           (let [{:keys [offset]} pattern]
             (reduce (fn [pattern pf]
@@ -289,14 +298,14 @@
                           (assoc :offset offset)))
                     pattern pfs)))))))
 
-(defmethod compile-pattern :mix1
+(defmethod compile-pattern-expr :mix1
   [[_ & body]]
   (let [[bindings body] (collect-bindings body)]
     (if (seq bindings)
-      (compile-pattern `[:bind ~bindings [:mix1 ~@body]])
+      (compile-pattern-expr `[:bind ~bindings [:mix1 ~@body]])
       (let [[leader & rest] body
-            leader-pf (compile-form leader)
-            rest-pf (compile-pattern (cons :mix rest))]
+            leader-pf (compile-pattern-form leader)
+            rest-pf (compile-pattern-expr (cons :mix rest))]
         (pfn [pattern bindings]
           (-> pattern
               (rest-pf bindings)
@@ -304,15 +313,15 @@
 
 (declare play)
 
-(defmethod compile-pattern :play
+(defmethod compile-pattern-expr :play
   [[_ & body]]
-  (let [pf (compile-pattern (cons :seq body))]
+  (let [pf (compile-pattern-expr (cons :seq body))]
     (pfn [{:keys [offset] :as pattern}
           {:keys [sequencer] :as bindings}]
       ;; @position-2: callback executed, future
       ;;   invokes (play sequencer ...) in a separate thread which
-      ;;   applies pf to the initial pattern and bindings, then adds
-      ;;   the resulting pattern P to the pattern queue
+      ;;   applies pf to the initial pattern and bindings, then
+      ;;   adds the resulting pattern P to the pattern queue
       ;; @position-1: P is merged into the timeline
       ;; @position-0: events in P are ready to be executed
       ;;
@@ -325,7 +334,7 @@
 
 (declare bpm!)
 
-(defmethod compile-pattern :bpm
+(defmethod compile-pattern-expr :bpm
   [[_ new-bpm]]
   (pfn [pattern {:keys [sequencer] :as bindings}]
     (add-callback pattern #(bpm! sequencer new-bpm))))
@@ -334,7 +343,8 @@
 
 (defn resolve-binding
   [k v]
-  (or (and *compile-target* (Target/resolve-binding *compile-target* k v))
+  (or (and *compile-target*
+           (Target/resolve-binding *compile-target* k v))
       v))
 
 (defn bind-expr?
@@ -343,10 +353,10 @@
        (keyword? (first x))))
 
 (defmulti compile-bind-expr
-  (fn [k expr]
-    (first expr)))
+  (fn [k bind-expr]
+    (first bind-expr)))
 
-(defn compile-binding-spec
+(defn compile-bind-spec
   "Takes a key and a spec, returns a function which when given a map of
   bindings, returns a value calculated from the bindings as described
   by spec."
@@ -357,9 +367,9 @@
 
 (defmethod compile-bind-expr :default
   [k expr]
-  (if *compile-target*
-    (Target/compile-bind-expr *compile-target* k expr)
-    (throw (ex-info "unable to compile bind expression" {:k k :expr expr}))))
+  (or (and *compile-target*
+           (Target/compile-bind-expr *compile-target* k expr))
+      (throw (ex-info "unable to compile bind expression" {:k k :expr expr}))))
 
 (defmethod compile-bind-expr :binding-of
   [k [_ arg]]
@@ -371,8 +381,8 @@
   `(defmethod compile-bind-expr ~name
      [~'k [~'_ ~'x ~'y]]
      (if ~'y
-       (let [~'x (compile-binding-spec ~'k ~'x)
-             ~'y (compile-binding-spec ~'k ~'y)]
+       (let [~'x (compile-bind-spec ~'k ~'x)
+             ~'y (compile-bind-spec ~'k ~'y)]
          (fn [~'bindings] (~op (~'x ~'bindings) (~'y ~'bindings))))
        (compile-bind-expr ~'k [~name [:binding-of ~'k] ~'x]))))
 
@@ -381,30 +391,31 @@
 (compile-binop-bind-expr :mul *)
 (compile-binop-bind-expr :div /)
 
-(defn binding-specs->update-fn
+(defn bind-specs->update-fn
   "Takes a map of binding specifications and creates a function which
   when given a map of bindings, updates them according to the specs."
-  [binding-specs]
+  [bind-specs]
   (reduce-kv
    (fn [f k v]
-     (let [calculate-bind-value (compile-binding-spec k v)]
+     (let [calculate-bind-value (compile-bind-spec k v)]
        (comp #(assoc % k (calculate-bind-value %)) f)))
-   identity binding-specs))
+   identity bind-specs))
 
 (defn get-default-bindings
   []
-  (or (and *compile-target* (Target/get-default-bindings *compile-target*))
+  (or (and *compile-target*
+           (Target/get-default-bindings *compile-target*))
       {}))
 
-(defmethod compile-pattern :bind
-  [[_ binding-specs & body]]
-  (if (empty? binding-specs)
-    (compile-pattern (cons :seq body))
-    (binding [*compile-target* (or (:target binding-specs)
+(defmethod compile-pattern-expr :bind
+  [[_ bind-specs & body]]
+  (if (empty? bind-specs)
+    (compile-pattern-expr (cons :seq body))
+    (binding [*compile-target* (or (:target bind-specs)
                                    *compile-target*)]
-      (let [pf (compile-pattern (cons :seq body))
+      (let [pf (compile-pattern-expr (cons :seq body))
             default-bindings (get-default-bindings)
-            update-bindings (binding-specs->update-fn binding-specs)]
+            update-bindings (bind-specs->update-fn bind-specs)]
         (pfn [pattern bindings]
           (pf pattern (-> default-bindings
                           (merge bindings)
@@ -492,11 +503,11 @@
 (defn play
   ([sequencer pf bindings]
    (Target/start sequencer)
-   (let [init-pattern init-pattern
+   (let [init-pattern seed-pattern
          init-bindings (merge {:step 1}
                               bindings
                               {:sequencer sequencer})
-         pf (compile-form pf)
+         pf (compile-pattern-form pf)
          pattern (pf init-pattern init-bindings)]
      (swap! (:pattern-queue sequencer) conj pattern)
      :queued))
