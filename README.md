@@ -1,5 +1,7 @@
 # omkamra.sequencer
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.omkamra/sequencer.svg)](https://clojars.org/com.github.omkamra/sequencer)
+
 A Clojure library for sequencing events on a timeline.
 
 ## Timeline
