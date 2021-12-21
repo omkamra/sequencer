@@ -1,4 +1,5 @@
 (ns omkamra.sequencer
+  (:refer-clojure :exclude [compile])
   (:require [omkamra.sequencer.protocols.Target :as Target]
             [omkamra.sequencer.protocols.TargetFactory :as TargetFactory])
   (:import (java.util.concurrent TimeUnit)
@@ -206,6 +207,8 @@
              :else (or (and *compile-target*
                             (Target/compile-pattern-form *compile-target* x))
                        (throw (ex-info "unable to compile pattern form" {:form x})))))))
+
+(def compile compile-pattern-form)
 
 (defmethod compile-pattern-expr :default
   [expr]
