@@ -227,9 +227,12 @@
     seed-pattern))
 
 (defmethod compile-pattern-expr :call
-  [[_ callback]]
-  (pfn [pattern bindings]
-    (add-callback pattern callback)))
+  [[_ callback & args]]
+  (let [callback (if args
+                   #(apply callback args)
+                   callback)]
+    (pfn [pattern bindings]
+      (add-callback pattern callback))))
 
 (defmethod compile-pattern-expr :snap
   [[_ beats]]
