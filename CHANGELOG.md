@@ -5,6 +5,8 @@
 ### Added
 
 - `sequencer/compile`: a shorthand for `sequencer/compile-pattern-form`
+- `sequencer/register-target` accepts an optional target alias (a
+  keyword) which can be used to refer to the target in `:bind` forms
 
 ### Changed
 

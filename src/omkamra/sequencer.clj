@@ -144,18 +144,37 @@
   ^{:doc "Set of targets shared by all sequencers. These are automatically started when the first sequencer starts and stopped when the last active sequencer exits."}
   registered-targets (atom #{}))
 
+(defonce
+  ^{:doc "Aliases which can be used to identify targets in :bind expressions."}
+  target-aliases (atom {}))
+
 (defn register-target
-  [target]
-  (swap! registered-targets conj target))
+  ([target]
+   (swap! registered-targets conj target))
+  ([target alias]
+   (assert (keyword? alias) "target alias must be a keyword")
+   (swap! registered-targets conj target)
+   (swap! target-aliases assoc alias target)))
 
 (defn unregister-target
   [target]
-  (swap! registered-targets disj target))
+  (swap! registered-targets disj target)
+  (swap! target-aliases
+         (fn [aliases]
+           (into {}
+                 (remove (fn [[k v]] (= v target)))
+                 aliases))))
 
 (def
   ^:dynamic
   ^{:doc "The pattern compiler turns to this target if it finds a pattern form, pattern expression, binding key or bind expression that it does not understand. This target can also supply default bindings for :bind forms."}
   *compile-target* nil)
+
+(defn resolve-target
+  [target]
+  (if (satisfies? Target/protocol target)
+    target
+    (get @target-aliases target)))
 
 ;; patterns
 
@@ -349,9 +368,12 @@
 
 (defn resolve-binding
   [k v]
-  (or (and *compile-target*
-           (Target/resolve-binding *compile-target* k v))
-      v))
+  (if (and (= k :target) (keyword? v))
+    (or (resolve-target v)
+        (throw (ex-info "cannot resolve target" {:target-alias v})))
+    (or (and *compile-target*
+             (Target/resolve-binding *compile-target* k v))
+        v)))
 
 (defn bind-expr?
   [x]
@@ -417,15 +439,15 @@
   [[_ bind-specs & body]]
   (if (empty? bind-specs)
     (compile-pattern-expr (cons :seq body))
-    (binding [*compile-target* (or (:target bind-specs)
-                                   *compile-target*)]
-      (let [pf (compile-pattern-expr (cons :seq body))
-            default-bindings (get-default-bindings)
-            update-bindings (bind-specs->update-fn bind-specs)]
-        (pfn [pattern bindings]
-          (pf pattern (-> default-bindings
-                          (merge bindings)
-                          update-bindings)))))))
+    (let [target (resolve-target (:target bind-specs))]
+      (binding [*compile-target* (or target *compile-target*)]
+        (let [pf (compile-pattern-expr (cons :seq body))
+              default-bindings (get-default-bindings)
+              update-bindings (bind-specs->update-fn bind-specs)]
+          (pfn [pattern bindings]
+            (pf pattern (-> default-bindings
+                            (merge bindings)
+                            update-bindings))))))))
 
 ;; sequencer
 
