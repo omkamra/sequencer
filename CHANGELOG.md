@@ -1,6 +1,6 @@
 # Change Log
 
-## [Unreleased]
+## [0.2.0] - 2021-12-22
 
 ### Added
 
@@ -29,5 +29,5 @@
 
 Initial release.
 
-[Unreleased]: https://github.com/omkamra/sequencer/compare/0.1.0...HEAD
+[0.2.0]: https://github.com/omkamra/sequencer/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/omkamra/sequencer/tree/0.1.0
