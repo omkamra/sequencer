@@ -141,11 +141,14 @@
     (make-target* factory descriptor)))
 
 (defonce
-  ^{:doc "Set of targets shared by all sequencers. These are automatically started when the first sequencer starts and stopped when the last active sequencer exits."}
+  ^{:doc "Set of targets shared by all sequencers. These are
+  automatically started when the first sequencer starts and stopped
+  when the last active sequencer exits."}
   registered-targets (atom #{}))
 
 (defonce
-  ^{:doc "Aliases which can be used to identify targets in :bind expressions."}
+  ^{:doc "Keyword aliases which can be used to identify targets
+  in :bind expressions."}
   target-aliases (atom {}))
 
 (defn register-target
@@ -167,7 +170,10 @@
 
 (def
   ^:dynamic
-  ^{:doc "The pattern compiler turns to this target if it finds a pattern form, pattern expression, binding key or bind expression that it does not understand. This target can also supply default bindings for :bind forms."}
+  ^{:doc "The pattern compiler turns to this target if it
+  finds a pattern form, pattern expression, binding key or bind
+  expression that it does not understand. This target can also supply
+  default bindings for :bind forms."}
   *compile-target* nil)
 
 (defn resolve-target
@@ -376,7 +382,7 @@
   [k v]
   (if (and (= k :target) (keyword? v))
     (or (resolve-target v)
-        (throw (ex-info "cannot resolve target" {:target-alias v})))
+        (throw (ex-info "cannot resolve target alias" {:target-alias v})))
     (or (and *compile-target*
              (Target/resolve-binding *compile-target* k v))
         v)))
