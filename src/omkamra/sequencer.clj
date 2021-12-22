@@ -290,7 +290,10 @@
 (defmethod compile-pattern-expr :var
   [[_ v]]
   (pfn [pattern bindings]
-    (let [pf (compile-pattern-form (var-get v))]
+    (let [pf (var-get v)
+          pf (if (pfn? pf)
+               pf
+               (compile-pattern-form [:bind bindings pf]))]
       (pf pattern bindings))))
 
 (defn collect-bindings
