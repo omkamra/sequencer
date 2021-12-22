@@ -152,7 +152,7 @@
   ([target]
    (swap! registered-targets conj target))
   ([target alias]
-   (assert (keyword? alias) "target alias must be a keyword")
+   (assert (qualified-keyword? alias) "target alias must be a qualified keyword")
    (swap! registered-targets conj target)
    (swap! target-aliases assoc alias target)))
 
