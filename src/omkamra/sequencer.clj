@@ -93,13 +93,13 @@
   "Merges each pattern in pq into the timeline starting at start-pos."
   [timeline start-pos pq]
   (reduce
-   (fn [timeline {:keys [snap events] :as pattern}]
+   (fn [timeline {:keys [snap events delay] :as pattern}]
      (let [snapped-start-pos (align-position start-pos snap)]
        (reduce
         (fn [timeline [offset callback :as event]]
           ;; avoid scheduling callbacks to start-pos as that's
           ;; already in the past
-          (let [absolute-pos (+ snapped-start-pos (int offset))
+          (let [absolute-pos (+ snapped-start-pos (int offset) delay)
                 adjusted-pos (max absolute-pos (inc start-pos))]
             (update timeline adjusted-pos conjv callback)))
         timeline events)))
@@ -181,6 +181,7 @@
 (def seed-pattern
   {:events []
    :snap 0
+   :delay 0
    :offset 0})
 
 (defn add-callback
@@ -259,6 +260,11 @@
     (let [{:keys [sequencer]} bindings
           {:keys [tpb]} sequencer]
       (assoc pattern :snap (beats->ticks beats tpb)))))
+
+(defmethod compile-pattern-expr :delay
+  [[_ pf delay]]
+  (pfn [pattern bindings]
+    (-> pattern pf (assoc :delay delay))))
 
 (defmethod compile-pattern-expr :wait
   [[_ steps]]
@@ -340,7 +346,7 @@
 
 (defmethod compile-pattern-expr :play
   [[_ & body]]
-  (let [pf (compile-pattern-expr (cons :seq body))]
+  (let [pf (compile-pattern-expr [:seq [:delay 1] (cons :seq body)])]
     (pfn [{:keys [offset] :as pattern}
           {:keys [sequencer] :as bindings}]
       ;; @position-2: callback executed, future
