@@ -159,14 +159,16 @@
    (swap! registered-targets conj target)
    (swap! target-aliases assoc alias target)))
 
+(defn dissoc-value
+  [m v]
+  (letfn [(has-matching-value? [e]
+            (= (val e) v))]
+    (into {} (remove has-matching-value?) m)))
+
 (defn unregister-target
   [target]
   (swap! registered-targets disj target)
-  (swap! target-aliases
-         (fn [aliases]
-           (into {}
-                 (remove (fn [[k v]] (= v target)))
-                 aliases))))
+  (swap! target-aliases dissoc-value target))
 
 (def
   ^:dynamic
