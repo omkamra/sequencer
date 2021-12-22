@@ -80,6 +80,7 @@ Returns an empty seed pattern:
 ```
 {:events []
  :snap 0
+ :delay 0
  :offset 0}
 ```
 
