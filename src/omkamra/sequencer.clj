@@ -270,9 +270,9 @@
       (assoc pattern :snap (beats->ticks beats tpb)))))
 
 (defmethod compile-pattern-expr :delay
-  [[_ pf delay]]
+  [[_ delay]]
   (pfn [pattern bindings]
-    (-> pattern pf (assoc :delay delay))))
+    (assoc pattern :delay delay)))
 
 (defmethod compile-pattern-expr :wait
   [[_ steps]]
@@ -357,7 +357,7 @@
 
 (defmethod compile-pattern-expr :play
   [[_ & body]]
-  (let [pf (compile-pattern-expr [:seq [:delay 1] (cons :seq body)])]
+  (let [pf (compile-pattern-expr `[:seq [:delay 1] ~@body])]
     (pfn [{:keys [offset] :as pattern}
           {:keys [sequencer] :as bindings}]
       ;; @position-2: callback executed, future
