@@ -25,18 +25,19 @@ configuration, there are 96 ticks per beat and 120 beats per minute.
 
 ## Patterns
 
-A *pattern* consists of three things:
+A *pattern* consists of four things:
 
 1. `events`: a vector of `[offset callback]` pairs
 2. `snap`: an alignment value expressed in ticks
-3. `offset`: the current offset of the pattern (only used while the pattern is built)
+3. `delay`: a delay value expressed in ticks
+4. `offset`: the current offset of the pattern (only used while the pattern is built)
 
 An *offset* is a position relative to the beginning of the pattern.
 
 A pattern can be *merged* into the timeline at the current
-position. The merge operation adds the offset of each event to the
-current position of the timeline and injects the callbacks at the
-resulting absolute positions.
+position. The merge operation adds the offset of each event plus the
+pattern delay to the current position of the timeline and injects the
+callbacks at the resulting absolute positions.
 
 If `snap` is non-zero, the merge operation rounds up the current
 position of the timeline to the next multiple of `snap` and uses this
@@ -97,76 +98,30 @@ Example: `[:snap 4]`
 Sets the `snap` field of the pattern to the given number of beats
 (converted into ticks).
 
+### :delay
+
+Example `[:delay 1]`
+
+Sets the `delay` field of the pattern to the given number of ticks.
+
 ### :wait
 
 Example: `[:wait 1]`
 
 1. If the argument N is a positive number, adds N steps to the pattern offset
-2. If the argument N is a negative number, advances the pattern offset until it reaches the next multiple of -N steps
+2. If the argument N is a negative number, advances the pattern offset
+   until it reaches the next multiple of -N steps
 
 A *step* is a unit of duration expressed in beats.
 
 The current step value is taken from the bindings (default: 1).
 
-### :var
-
-Example: `[:var #'v]`
-
-Fetches the current binding of var `v`, compiles it into a pattern
-transformer (if it is not one already), then applies the result to the
-incoming pattern and bindings.
-
-This transformer can be used to support live coding.
-
-### :seq
-
-Example: `[:seq [:wait 2] [:call f] [:wait 3] [:call g]]`
-
-Threads the incoming pattern through the given pattern transformers.
-
-Each pattern transformer gets the same bindings.
-
-### :mix
-
-Example: `[:mix [:call f] [[:wait 2] [:call g]] [:call h]]`
-
-Threads the incoming pattern through the given pattern
-transformers. Resets the pattern offset to its original value after
-each step.
-
-This can be used to mix several patterns on top of each other.
-
-### :mix1
-
-Example: `[:mix1 [:call f] [[:wait 2] [:call g]] [:call h]]`
-
-Same as `[seq [:mix [[:wait 2] [:call g]] [:call h]] [:call f]]`
-
-In other words, the first child form advances the offset but the others don't.
-
-### :play
-
-Example: `[:play [:wait 8] [:var #'ornament]]`
-
-At compile-time, wraps the supplied patterns into a `:seq` and
-compiles the result.
-
-At run-time, adds an event to the input pattern which builds a new
-pattern using the previously compiled transformer and the input
-bindings, then merges the resulting pattern onto the timeline.
-
-### :bpm
-
-Example: `[:bpm 180]`
-
-Adds an event that changes the sequencer's BPM to the given value.
-
 ### :bind
 
 Example: `[:seq [:bind {:step 2} [:wait 1]] [:bind {:step 3} [:wait 1]]]`
 
-Updates incoming bindings as described by the first map argument, then
-threads the incoming pattern through the given pattern transformers.
+Updates input bindings as described by the first map argument, then
+threads the input pattern through the given pattern transformers.
 
 Each pattern transformer gets the updated bindings.
 
@@ -176,10 +131,68 @@ first bind and 3 beats in the second.
 Binding values are not limited to constants, they can also be *bind
 expressions*:
 
-- `[:add 3]`: adds 3 to the current binding value
-- `[:sub 3]`: subtracts 3 from the current binding value
-- `[:mul 3]`: multiplies the current binding value by 3
-- `[:div 3]`: divides the current binding value by 3
+- `[:add N]`: adds N to the current binding value
+- `[:sub N]`: subtracts N from the current binding value
+- `[:mul N]`: multiplies the current binding value by N
+- `[:div N]`: divides the current binding value by N
+
+### :var
+
+Example: `[:var #'v]`
+
+Fetches the current binding of var `v`.
+
+If the result is already a pattern transformer, leaves it as it
+is. Otherwise wraps it in a `:bind` form - using the input bindings as
+the bind map - and compiles this form into a pattern transformer.
+
+Finally applies the resulting pattern transformer to the input pattern
+and bindings.
+
+This transformer can be used to support live coding.
+
+### :seq
+
+Example: `[:seq [:wait 2] [:call f] [:wait 3] [:call g]]`
+
+Threads the input pattern through the given pattern transformers.
+
+Each pattern transformer gets the same bindings.
+
+### :mix
+
+Example: `[:mix [:call f] [[:wait 2] [:call g]] [:call h]]`
+
+Threads the input pattern through the given pattern
+transformers. Resets the pattern offset to its original value after
+each step.
+
+This can be used to mix several patterns on top of each other.
+
+### :mix1
+
+Example: `[:mix1 [:call f] [[:wait 2] [:call g]] [:call h]]`
+
+Same as `[:seq [:mix [[:wait 2] [:call g]] [:call h]] [:call f]]`
+
+In other words, the first child form advances the offset but the others don't.
+
+### :play
+
+Example: `[:play [:wait 8] [:var #'ornament]]`
+
+At compile-time, wraps the supplied patterns in a `:seq` and compiles
+the result.
+
+At build-time, adds an event to the input pattern which builds a new
+pattern using the previously compiled transformer and the input
+bindings, then merges the resulting pattern onto the timeline.
+
+### :bpm
+
+Example: `[:bpm 180]`
+
+Adds an event that changes the sequencer's BPM to the given value.
 
 ## Syntactic sugar
 
@@ -230,10 +243,11 @@ A *target* can extend the vocabulary of pattern forms and may also
 provide access to various software or hardware devices which can
 execute these new forms in specific contexts.
 
-For example, the `fluidsynth` target manages a SoundFont MIDI
-synthesizer and provides forms like `[:channel N]` to change the
-current MIDI channel, `[:program N]` to select a synthesizer patch and
-`[:note N]` to trigger a MIDI note.
+For example, the
+[fluidsynth](https://github.com/omkamra/sequencer-fluidsynth) target
+manages a SoundFont MIDI synthesizer and provides forms like
+`[:channel N]` to change the current MIDI channel, `[:program N]` to
+select a synthesizer patch and `[:note N]` to trigger a MIDI note.
 
 Targets implement the following protocol:
 
@@ -253,9 +267,12 @@ To develop a new target, you need to implement the `Target` and
 
 A target factory implements three methods:
 
-- `(understands-descriptor? tf descriptor)`: returns `true` if the target factory can interpret the passed target descriptor
-- `(sanitize-descriptor tf descriptor)`: converts the target descriptor into canonical form
-- `(make-target tf descriptor)`: creates the actual target based on information in the descriptor
+- `(understands-descriptor? tf descriptor)`: returns `true` if the
+  target factory can interpret the passed target descriptor
+- `(sanitize-descriptor tf descriptor)`: converts the target
+  descriptor into canonical form
+- `(make-target tf descriptor)`: creates the actual target based on
+  information in the descriptor
 
 To use a target, you must first instantiate it with
 `(sequencer/make-target descriptor)`, where `descriptor` is a data
@@ -266,6 +283,14 @@ returned target shall be registered with the sequencer library
 Once the target has been registered, you can bind it to the special
 `:target` key inside a bind form: this lets every pattern within the
 scope of that binding use the target's extensions.
+
+Besides binding targets by value, you can also use *target
+aliases*. For this to work, you must pass two arguments to
+`sequencer/register-target`: the target itself and its alias. The
+alias must be a namespace-qualified keyword. Once a target has been
+registered with an alias, you can bind this alias to the `:target` key
+inside bind maps and it will be automatically resolved to the right
+target.
 
 ## General usage
 
@@ -301,6 +326,7 @@ Seed pattern:
 ```
 {:events []
  :snap 0
+ :delay 0
  :offset 0}
 ```
 
@@ -312,7 +338,7 @@ Initial bindings (in case of the above example):
 ```
 
 You can inject your own bindings by passing them as the third argument
-of `sequencer/play` - they will be merged into the initial bindings.
+of `sequencer/play`.
 
 ### Clear the timeline
 
