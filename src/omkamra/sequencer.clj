@@ -521,6 +521,8 @@
                                  (swap! timeline dissoc pos)))
                         :stopped))
                     (catch Exception e
+                      (reset! playing false)
+                      (unregister-sequencer this)
                       (print-cause-trace e)
                       :crashed))))
         :started)))
