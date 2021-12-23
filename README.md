@@ -139,18 +139,26 @@ expressions*:
 
 ### :var
 
-Example: `[:var #'v]`
+Examples:
 
-Fetches the current binding of var `v`.
+- `[:var #'v]`
+- `[:var #'f 5]`
 
-If the result is already a pattern transformer, leaves it as it
-is. Otherwise wraps it in a `:bind` form - using the input bindings as
-the bind map - and compiles this form into a pattern transformer.
-
-Finally applies the resulting pattern transformer to the input pattern
+Fetches the current binding of the var given in the first argument. If
+this value is a pattern transformer, applies it to the input pattern
 and bindings.
 
-This transformer can be used to support live coding.
+Otherwise it tries to convert the value into a pattern form. First it
+checks if the value is a Clojure function. If it is, applies it to the
+rest of the arguments inside the `:var` form and uses the return value
+as the pattern form. Otherwise uses the value as it is.
+
+Finally it wraps the pattern form in a `:bind` expression - using the
+input bindings as its bind map -, compiles this `:bind` expression
+into a pattern transformer and applies the result to the input pattern
+and bindings.
+
+The `:var` transformer can be used to support live coding.
 
 ### :seq
 

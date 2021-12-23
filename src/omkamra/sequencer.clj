@@ -288,12 +288,15 @@
             (update pattern :offset align-position alignment)))))))
 
 (defmethod compile-pattern-expr :var
-  [[_ v]]
+  [[_ v & args]]
   (pfn [pattern bindings]
     (let [pf (var-get v)
           pf (if (pfn? pf)
                pf
-               (compile-pattern-form [:bind bindings pf]))]
+               (compile-pattern-form
+                [:bind bindings (if (fn? pf)
+                                  (apply pf args)
+                                  pf)]))]
       (pf pattern bindings))))
 
 (defn collect-bindings
