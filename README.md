@@ -203,6 +203,16 @@ Example: `[:bpm 180]`
 
 Adds an event that changes the sequencer's BPM to the given value.
 
+## Pattern lifecycle
+
+1. START: Pattern exists as a Clojure data structure (pattern expression)
+2. COMPILE: Pattern expression is compiled into a pattern transformer
+3. BUILD: Pattern transformer is applied to seed pattern and initial
+   bindings or the output of the previous step in a chain of pattern
+   transformers built through functional composition
+4. MERGE: Output of pattern transformer is merged onto the timeline
+5. EXECUTE: Pattern events (callbacks) found on the timeline are executed by the sequencer
+
 ## Syntactic sugar
 
 ### Pattern forms
