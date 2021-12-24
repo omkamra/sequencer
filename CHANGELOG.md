@@ -5,6 +5,7 @@
 ### Added
 
 - a section to the README which describes the pattern lifecycle
+- some tests
 
 ### Changed
 
