@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- a section to the README which describes the pattern lifecycle
+
 ### Changed
 
 - `:var` forms now check if the resolved var is a function, and if it
