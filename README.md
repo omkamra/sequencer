@@ -193,9 +193,10 @@ Example: `[:play [:wait 8] [:var #'ornament]]`
 At compile-time, wraps the supplied patterns in a `:seq` and compiles
 the result.
 
-At build-time, adds an event to the input pattern which builds a new
-pattern using the previously compiled transformer and the input
-bindings, then merges the resulting pattern onto the timeline.
+At build-time, adds an event to the input pattern which builds (at
+run-time) a new pattern using the previously compiled transformer and
+the input bindings, then merges the resulting pattern onto the
+timeline.
 
 ### :bpm
 
