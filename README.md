@@ -357,7 +357,7 @@ Initial bindings (in case of the above example):
  :step 1}
 ```
 
-You can inject your own bindings by passing them as the third argument
+You can add your own bindings by passing them as the third argument
 of `sequencer/play`.
 
 ### Clear the timeline
