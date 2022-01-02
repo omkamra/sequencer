@@ -1,5 +1,12 @@
 # Change Log
 
+## [Unreleased]
+
+### Changed
+
+- the task of waiting until the next tick has been abstracted into a
+  `Ticker` protocol, with a single implementation (`SleepingTicker`)
+
 ## [0.3.0] - 2021-12-24
 
 ### Added
@@ -42,6 +49,7 @@
 
 Initial release.
 
+[Unreleased]: https://github.com/omkamra/sequencer/compare/0.3.0...HEAD
 [0.3.0]: https://github.com/omkamra/sequencer/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/omkamra/sequencer/compare/0.1.0...0.2.0
 [0.1.0]: https://github.com/omkamra/sequencer/tree/0.1.0

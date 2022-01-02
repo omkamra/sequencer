@@ -1,7 +1,8 @@
 (ns omkamra.sequencer
   (:refer-clojure :exclude [compile])
   (:require [omkamra.sequencer.protocols.Target :as Target]
-            [omkamra.sequencer.protocols.TargetFactory :as TargetFactory])
+            [omkamra.sequencer.protocols.TargetFactory :as TargetFactory]
+            [omkamra.sequencer.protocols.Ticker :as Ticker])
   (:import (java.util.concurrent TimeUnit)
            (java.util.concurrent.locks LockSupport))
   (:require [clojure.stacktrace :refer [print-cause-trace]]))
@@ -104,6 +105,36 @@
             (update timeline adjusted-pos conjv callback)))
         timeline events)))
    timeline pq))
+
+;; tickers
+
+(defrecord SleepingTicker [bpm tpb last-tick]
+  Ticker/protocol
+  (start [this]
+    (let [tick-duration (ticks->ns 1 tpb @bpm)
+          now (System/nanoTime)]
+      (reset! last-tick (- now (mod now tick-duration)))))
+  (stop [this])
+  (tick [this]
+    (let [tick-duration (ticks->ns 1 tpb @bpm)
+          next-tick (+ @last-tick tick-duration)
+          now (System/nanoTime)]
+      (when (< now next-tick)
+        (nanosleep (- next-tick now)))
+      (reset! last-tick next-tick)))
+  (bpm! [this new-bpm]
+    (reset! bpm new-bpm)))
+
+(defmulti make-ticker
+  (fn [ticker-type bpm tpb]
+    ticker-type))
+
+(defmethod make-ticker :sleeping
+  [_ bpm tpb]
+  (map->SleepingTicker
+   {:bpm (atom bpm)
+    :tpb tpb
+    :last-tick (atom 0)}))
 
 ;; targets
 
@@ -497,7 +528,8 @@
 
 (defrecord Sequencer [config bpm tpb
                       timeline position pattern-queue
-                      playing player-thread]
+                      playing player-thread
+                      ticker]
 
   Target/protocol
 
@@ -506,28 +538,28 @@
       :already-playing
       (do
         (register-sequencer this)
+        (Ticker/start ticker)
         (reset! playing true)
         (reset! player-thread
                 (future
                   (try
+                    (Ticker/tick ticker)
                     (loop [pos @position
                            tl @timeline]
                       (if @playing
-                        (let [tick-start (System/nanoTime)]
+                        (do
                           (when-let [callbacks (get tl pos)]
                             (doseq [cb callbacks]
                               (cb)))
                           (let [pq (switch! pattern-queue [])]
                             (swap! timeline merge-pattern-queue pos pq))
-                          (let [tick-duration (ticks->ns 1 tpb @bpm)
-                                elapsed (- (System/nanoTime) tick-start)
-                                remaining (- tick-duration elapsed)]
-                            (nanosleep remaining))
+                          (Ticker/tick ticker)
                           (recur (swap! position inc)
                                  (swap! timeline dissoc pos)))
                         :stopped))
                     (catch Exception e
                       (reset! playing false)
+                      (Ticker/stop ticker)
                       (unregister-sequencer this)
                       (print-cause-trace e)
                       :crashed))))
@@ -536,6 +568,7 @@
   (stop [this]
     (do
       (reset! playing false)
+      (Ticker/stop ticker)
       (let [result @@player-thread]
         (unregister-sequencer this)
         result)))
@@ -566,7 +599,8 @@
 
 (defn bpm!
   [sequencer new-bpm]
-  (reset! (:bpm sequencer) new-bpm))
+  (reset! (:bpm sequencer) new-bpm)
+  (Ticker/bpm! (:ticker sequencer) new-bpm))
 
 (defn start
   [sequencer]
@@ -591,13 +625,18 @@
 
 (defn create
   ([config]
-   (map->Sequencer {:config config
-                    :bpm (atom (get config :bpm 120))
-                    :tpb (get config :tpb 96)
-                    :playing (atom false)
-                    :timeline (atom {})
-                    :position (atom 0)
-                    :pattern-queue (atom [])
-                    :player-thread (atom nil)}))
+   (let [bpm (get config :bpm 120)
+         tpb (get config :tpb 96)
+         ticker-type (get config :ticker-type :sleeping)
+         ticker (make-ticker ticker-type bpm tpb)]
+     (map->Sequencer {:config config
+                      :bpm (atom bpm)
+                      :tpb tpb
+                      :playing (atom false)
+                      :timeline (atom {})
+                      :position (atom 0)
+                      :pattern-queue (atom [])
+                      :player-thread (atom nil)
+                      :ticker ticker})))
   ([]
    (create {})))
