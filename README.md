@@ -266,8 +266,8 @@ execute these new forms in specific contexts.
 For example, the
 [fluidsynth](https://github.com/omkamra/sequencer-fluidsynth) target
 manages a SoundFont MIDI synthesizer and provides forms like
-`[:channel N]` to change the current MIDI channel, `[:program N]` to
-select a synthesizer patch and `[:note N]` to trigger a MIDI note.
+`[:program N]` to select a synthesizer patch and `[:note N]` to
+trigger a MIDI note.
 
 Targets implement the following protocol:
 
