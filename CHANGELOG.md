@@ -5,7 +5,10 @@
 ### Changed
 
 - the task of waiting until the next tick has been abstracted into a
-  `Ticker` protocol, with a single implementation (`SleepingTicker`)
+  `Ticker` protocol with two implementations: `SleepingTicker` uses
+  various sleep methods, `AudioSyncTicker` synchronizes the ticks to
+  audio-in - unfortunately the latter takes too much CPU in its
+  current form so `SleepingTicker` remains the default
 
 ## [0.3.0] - 2021-12-24
 
