@@ -143,7 +143,7 @@
                 (let [framesize (.getFrameSize format)
                       bufsize (* framesize 64)
                       buf (byte-array bufsize)]
-                  (.open tdl format bufsize)
+                  (.open tdl format)
                   (.start tdl)
                   (reset! active true)
                   (future
