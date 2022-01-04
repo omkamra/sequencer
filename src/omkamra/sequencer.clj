@@ -3,8 +3,9 @@
   (:require [omkamra.sequencer.protocols.Target :as Target]
             [omkamra.sequencer.protocols.TargetFactory :as TargetFactory]
             [omkamra.sequencer.protocols.Ticker :as Ticker])
-  (:import (java.util.concurrent TimeUnit)
-           (java.util.concurrent.locks LockSupport))
+  (:import (java.util.concurrent TimeUnit ArrayBlockingQueue)
+           (java.util.concurrent.locks LockSupport)
+           (javax.sound.sampled AudioSystem))
   (:require [clojure.stacktrace :refer [print-cause-trace]]))
 
 (def nanosleep-default-precision (.toNanos TimeUnit/MILLISECONDS 2))
@@ -125,6 +126,47 @@
   (bpm! [this new-bpm]
     (reset! bpm new-bpm)))
 
+(defrecord AudioSyncingTicker [bpm tpb last-tick active queue audio-thread]
+  Ticker/protocol
+  (start [this]
+    (.clear queue)
+    (reset! last-tick 0)
+    (reset! audio-thread
+            (loop [format nil
+                   tdl (AudioSystem/getTargetDataLine nil)]
+              (if-not format
+                (do
+                  (.open tdl)
+                  (let [format (.getFormat tdl)]
+                    (.close tdl)
+                    (recur format (AudioSystem/getTargetDataLine format))))
+                (let [framesize (.getFrameSize format)
+                      bufsize (* framesize 64)
+                      buf (byte-array bufsize)]
+                  (.open tdl format bufsize)
+                  (.start tdl)
+                  (reset! active true)
+                  (future
+                    (try
+                      (while @active
+                        (.offer queue (* 1000 (.getMicrosecondPosition tdl)))
+                        (.read tdl buf 0 bufsize))
+                      (finally
+                        (.stop tdl)
+                        (.close tdl)))))))))
+  (stop [this]
+    (reset! active false)
+    @@audio-thread)
+  (tick [this]
+    (let [tick-duration (ticks->ns 1 tpb @bpm)
+          next-tick (+ @last-tick tick-duration)]
+      (loop [now (.take queue)]
+        (when (< now next-tick)
+          (recur (.take queue))))
+      (reset! last-tick next-tick)))
+  (bpm! [this new-bpm]
+    (reset! bpm new-bpm)))
+
 (defmulti make-ticker
   (fn [ticker-type bpm tpb]
     ticker-type))
@@ -135,6 +177,16 @@
    {:bpm (atom bpm)
     :tpb tpb
     :last-tick (atom 0)}))
+
+(defmethod make-ticker :audio-syncing
+  [_ bpm tpb]
+  (map->AudioSyncingTicker
+   {:bpm (atom bpm)
+    :tpb tpb
+    :last-tick (atom 0)
+    :active (atom false)
+    :queue (ArrayBlockingQueue. 1)
+    :audio-thread (atom nil)}))
 
 ;; targets
 
@@ -568,9 +620,9 @@
   (stop [this]
     (do
       (reset! playing false)
-      (Ticker/stop ticker)
       (let [result @@player-thread]
         (unregister-sequencer this)
+        (Ticker/stop ticker)
         result)))
 
   (restart [this]
