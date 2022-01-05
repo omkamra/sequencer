@@ -8,11 +8,8 @@
            (javax.sound.sampled AudioSystem))
   (:require [clojure.stacktrace :refer [print-cause-trace]]))
 
-(def nanosleep-default-precision (.toNanos TimeUnit/MILLISECONDS 2))
-(def parknanos-default-precision 100)
-
-(def nanosleep-current-precision (atom nanosleep-default-precision))
-(def parknanos-current-precision (atom parknanos-default-precision))
+(def nanosleep-precision (atom 0))
+(def parknanos-precision (atom 0))
 
 (defn nanosleep
   "Sleeps for ns nanoseconds. Attempts to be precise, even if this
@@ -22,24 +19,24 @@
     (loop [time-left ns]
       (when (pos? time-left)
         (let [sleep-start (System/nanoTime)]
-          (let [^long precision @nanosleep-current-precision]
+          (let [^long precision @nanosleep-precision]
             (if (> time-left precision)
               (let [sleep-dur (- time-left precision)]
                 (.sleep TimeUnit/NANOSECONDS sleep-dur)
                 (let [elapsed (- (System/nanoTime) sleep-start)
                       diff (Math/abs (- elapsed sleep-dur))]
-                  (when (or (>= diff (* precision 2))
-                            (<= diff (/ precision 2)))
-                    (reset! nanosleep-current-precision diff))))
-              (let [^long precision @parknanos-current-precision]
+                  (when (or (>= diff (* precision 1.25))
+                            (<= diff (* precision 0.75)))
+                    (reset! nanosleep-precision diff))))
+              (let [^long precision @parknanos-precision]
                 (if (> time-left precision)
                   (let [sleep-dur (- time-left precision)]
                     (LockSupport/parkNanos sleep-dur)
                     (let [elapsed (- (System/nanoTime) sleep-start)
                           diff (Math/abs (- elapsed sleep-dur))]
-                      (when (or (>= diff (* precision 2))
-                                (<= diff (/ precision 2)))
-                        (reset! parknanos-current-precision diff))))
+                      (when (or (>= diff (* precision 1.25))
+                                (<= diff (* precision 0.75)))
+                        (reset! parknanos-precision diff))))
                   (Thread/yield))))))
         (recur (- end (System/nanoTime)))))))
 
