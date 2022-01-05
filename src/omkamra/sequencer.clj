@@ -5,7 +5,7 @@
             [omkamra.sequencer.protocols.Ticker :as Ticker])
   (:import (java.util.concurrent TimeUnit ArrayBlockingQueue)
            (java.util.concurrent.locks LockSupport)
-           (javax.sound.sampled AudioSystem))
+           (javax.sound.sampled AudioSystem AudioFormat))
   (:require [clojure.stacktrace :refer [print-cause-trace]]))
 
 (def nanosleep-precision (atom 0))
@@ -99,7 +99,7 @@
           ;; avoid scheduling callbacks to start-pos as that's
           ;; already in the past
           (let [absolute-pos (+ snapped-start-pos (int offset) delay)
-                adjusted-pos (max absolute-pos (inc start-pos))]
+                adjusted-pos (max absolute-pos (unchecked-inc start-pos))]
             (update timeline adjusted-pos conjv callback)))
         timeline events)))
    timeline pq))
@@ -123,13 +123,15 @@
   (bpm! [this new-bpm]
     (reset! bpm new-bpm)))
 
-(defrecord AudioSyncingTicker [bpm tpb last-tick active queue audio-thread]
+(defrecord AudioSyncingTicker [bpm tpb last-tick active
+                               ^ArrayBlockingQueue queue
+                               audio-thread]
   Ticker/protocol
   (start [this]
     (.clear queue)
     (reset! last-tick 0)
     (reset! audio-thread
-            (loop [format nil
+            (loop [^AudioFormat format nil
                    tdl (AudioSystem/getTargetDataLine nil)]
               (if-not format
                 (do
@@ -603,7 +605,7 @@
                           (let [pq (switch! pattern-queue [])]
                             (swap! timeline merge-pattern-queue pos pq))
                           (Ticker/tick ticker)
-                          (recur (swap! position inc)
+                          (recur (swap! position unchecked-inc)
                                  (swap! timeline dissoc pos)))
                         :stopped))
                     (catch Exception e
