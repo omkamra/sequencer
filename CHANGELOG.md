@@ -10,6 +10,11 @@
   to audio-in - unfortunately the latter takes too much CPU in its
   current form so `SleepingTicker` remains the default
 
+### Fixed
+
+- 100% CPU usage due to the precision of nanosleep/parknanos becoming
+  too large
+
 ## [0.3.0] - 2021-12-24
 
 ### Added

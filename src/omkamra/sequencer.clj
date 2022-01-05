@@ -11,6 +11,13 @@
 (def nanosleep-precision (atom 0))
 (def parknanos-precision (atom 0))
 
+(defn adjust-precision
+  [precision-atom precision diff]
+  (cond (>= diff (* precision 1.25))
+        (swap! precision-atom * 1.25)
+        (<= diff (* precision 0.75))
+        (swap! precision-atom * 0.75)))
+
 (defn nanosleep
   "Sleeps for ns nanoseconds. Attempts to be precise, even if this
   requires busy waiting."
@@ -25,18 +32,14 @@
                 (.sleep TimeUnit/NANOSECONDS sleep-dur)
                 (let [elapsed (- (System/nanoTime) sleep-start)
                       diff (Math/abs (- elapsed sleep-dur))]
-                  (when (or (>= diff (* precision 1.25))
-                            (<= diff (* precision 0.75)))
-                    (reset! nanosleep-precision diff))))
+                  (adjust-precision nanosleep-precision precision diff)))
               (let [^long precision @parknanos-precision]
                 (if (> time-left precision)
                   (let [sleep-dur (- time-left precision)]
                     (LockSupport/parkNanos sleep-dur)
                     (let [elapsed (- (System/nanoTime) sleep-start)
                           diff (Math/abs (- elapsed sleep-dur))]
-                      (when (or (>= diff (* precision 1.25))
-                                (<= diff (* precision 0.75)))
-                        (reset! parknanos-precision diff))))
+                      (adjust-precision parknanos-precision precision diff)))
                   (Thread/yield))))))
         (recur (- end (System/nanoTime)))))))
 
