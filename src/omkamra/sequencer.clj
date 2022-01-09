@@ -8,15 +8,15 @@
            (javax.sound.sampled AudioSystem AudioFormat))
   (:require [clojure.stacktrace :refer [print-cause-trace]]))
 
-(def nanosleep-precision (atom 0))
-(def parknanos-precision (atom 0))
+(def nanosleep-precision (atom 4))
+(def parknanos-precision (atom 4))
 
 (defn adjust-precision
   [precision-atom precision diff]
   (cond (>= diff (* precision 1.25))
-        (swap! precision-atom * 1.25)
+        (reset! precision-atom (max 4 (* precision 1.25)))
         (<= diff (* precision 0.75))
-        (swap! precision-atom * 0.75)))
+        (reset! precision-atom (max 4 (* precision 0.75)))))
 
 (defn nanosleep
   "Sleeps for ns nanoseconds. Attempts to be precise, even if this

@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.4.1] - 2022-01-09
+
+### Fixed
+
+- an embarrassing bug in `nanosleep` which nullified all attempts at
+  adapting to the measured nanosleep/parknanos precision (the fact
+  that I did not detect this bug makes me wonder if the whole idea is
+  a premature and unnecessary optimization)
+
 ## [0.4.0] - 2022-01-05
 
 ### Changed
@@ -57,6 +66,7 @@
 
 Initial release.
 
+[0.4.1]: https://github.com/omkamra/sequencer/compare/0.4.0...0.4.1
 [0.4.0]: https://github.com/omkamra/sequencer/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/omkamra/sequencer/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/omkamra/sequencer/compare/0.1.0...0.2.0
